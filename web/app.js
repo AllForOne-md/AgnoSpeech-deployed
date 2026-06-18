@@ -1,113 +1,122 @@
 /* AgnoSpeech Local Privatization Workbench — frontend.
-   All privacy logic lives in the Python backend (the agnospeech library); this
-   file only renders the design and drives the API.
 
-   Two setups: Simple use (live editor) and Advanced use (slider playground +
-   full-corpus run), plus an Info tab. */
+   Two halves live here:
 
+   1. A four-step *workflow demo* — Source → Privatize → Harm check → Release —
+      ported from the source design. It runs on baked-in mock data (the MSGS /
+      HARM arrays below) with a faked on-device processing animation; nothing in
+      these four steps touches the network. This mirrors how the original design
+      mockup behaves.
+
+   2. A real *Live editor* tab — type/paste text and watch it get privatized for
+      real by the agnospeech holistic editor behind POST /api/edit. This is the
+      only tab that calls the backend.
+
+   No build step: this file renders the whole window into #app via template
+   strings and re-wires events after each render, exactly like the rest of the
+   static frontend. */
+
+// ---- themes (vars set inline on the root container per render) --------------
 const THEMES = {
+  clinical: {'bg':'#dde3ea','win':'#ffffff','panel':'#ffffff','panel2':'#f6f8fa','inset':'#eef2f6','fg':'#0e1a26','fg2':'#2c3c4a','muted':'#5d6b78','faint':'#93a0ab','border':'#e4e9ee','border-strong':'#cfd8e0','accent':'#0e7c8b','accent-fg':'#ffffff','accent-soft':'#e1f1f3','titlebar':'#f0f3f6','sidebar':'#f6f8fa','sidebar-active':'#e1f1f3','l1':'#9a6700','l1-bg':'#fbf0d6','l2':'#0e7c8b','l2-bg':'#def0f2','l3':'#6b46c1','l3-bg':'#ece6fa','safe':'#1f7a4d','safe-bg':'#e3f3ea','warn':'#9a6700','warn-bg':'#fbf0d6','danger':'#b23b27','danger-bg':'#f8e6e1','shadow':'rgba(20,40,60,0.22)'},
+  forensic: {'bg':'#06090d','win':'#0d1219','panel':'#11171f','panel2':'#0e141b','inset':'#0a0f15','fg':'#e7eef4','fg2':'#c4cfd9','muted':'#8696a4','faint':'#586675','border':'#202a36','border-strong':'#2c3a48','accent':'#2bb6c4','accent-fg':'#03161a','accent-soft':'#0d2b30','titlebar':'#10161e','sidebar':'#0c1117','sidebar-active':'#0d2b30','l1':'#e0b057','l1-bg':'#2c2310','l2':'#2bb6c4','l2-bg':'#0d2b30','l3':'#b69cf0','l3-bg':'#211a36','safe':'#4fc285','safe-bg':'#0e2a1c','warn':'#e0b057','warn-bg':'#2c2310','danger':'#e07a63','danger-bg':'#2e150f','shadow':'rgba(0,0,0,0.6)'},
   paper: {'bg':'#d9d2c6','win':'#fbf9f5','panel':'#fbf9f5','panel2':'#f3efe7','inset':'#ece7dc','fg':'#211c14','fg2':'#3d362b','muted':'#6f6557','faint':'#a59a89','border':'#e7e0d3','border-strong':'#d6cdbc','accent':'#0f7a6e','accent-fg':'#ffffff','accent-soft':'#e0efea','titlebar':'#f1ece2','sidebar':'#f3efe7','sidebar-active':'#e0efea','l1':'#8a5a12','l1-bg':'#f4e7cf','l2':'#0f7a6e','l2-bg':'#ddeee9','l3':'#6a4aa8','l3-bg':'#e9e2f4','safe':'#2c7a4f','safe-bg':'#e1efe6','warn':'#8a5a12','warn-bg':'#f4e7cf','danger':'#a8432c','danger-bg':'#f3e2dc','shadow':'rgba(80,60,30,0.20)'},
 };
 
 const REPO_URL = "https://github.com/AllForOne-md/AgnoSpeech";
 
-// Honesty: the on-device / 0-egress claims only hold for the desktop app (loopback).
-// A hosted (Vercel) deployment sends text to a serverless function to privatize it.
+// Honesty: the on-device / 0-egress claims only hold for the desktop app
+// (loopback). A hosted (Vercel) deployment sends the Live-editor text to a
+// serverless function to privatize it.
 const HOSTED = !['localhost', '127.0.0.1', '0.0.0.0', ''].includes(location.hostname);
-const PRIV_NOTE = HOSTED ? 'sent to the server to privatize' : 'never leaves this machine';
-const ENV_NOTE = HOSTED ? 'processed on the server · not stored' : 'on-device · 0 B sent';
+const PRIV_NOTE = HOSTED ? 'sent to the server to privatize · not stored' : 'never leaves this machine';
 
-const MODES = [
-  {id:'simple',   icon:'✎', label:'Simple use'},
-  {id:'advanced', icon:'⚙', label:'Advanced use'},
-  {id:'upload',   icon:'⬆', label:'Upload dataset'},
-  {id:'info',     icon:'ⓘ', label:'Info'},
+// ---- baked-in mock data for the workflow demo (Source/Privatize/Harm) -------
+const MSGS = [
+  { code:'MSG-0481', tag:'threat of exposure', note:'2 identifiers removed · author handle and style neutralized · coercive-threat content preserved for the detector.',
+    raw:[["Maria","id"],[" reported a message she received. The sender ","p"],["@coldwolf99","st"],[" wrote: “","p"],["you’ll regret ignoring me — everyone will see what you really are","hm"],[".” Her friend ","p"],["Tomás","id"],[" saw it too.","p"]],
+    priv:[["[REPORTER]","idr"],[" reported a message she received. The sender, ","p"],["[author]","str"],[", sent ","p"],["a threat that she would regret ignoring him and that people would be shown “what she really is.”","hm"],[" A ","p"],["[bystander]","idr"],[" also saw it.","p"]] },
+  { code:'MSG-1207', tag:'persistent contact', note:'1 identifier removed · venue and day generalized · stalking pattern preserved.',
+    raw:[["Aisha","id"],[" reported that ","p"],["@nightcaller","st"],[" keeps messaging from new accounts: “","p"],["I know you walk past the Lyric Café every Thursday","hm"],[".” She had blocked him five times.","p"]],
+    priv:[["[REPORTER]","idr"],[" reported that ","p"],["[author]","str"],[" repeatedly messaged from new accounts. The message ","p"],["referenced knowing her regular weekly route and a specific local venue","hm"],[". She had blocked the sender multiple times.","p"]] },
+  { code:'MSG-3398', tag:'image-based coercion', note:'1 identifier removed · author style neutralized · coercion content preserved verbatim in meaning.',
+    raw:[["Priya","id"],[" reported a message: “","p"],["send another photo or I’ll post the ones I already have","hm"],[".” ","p"],["@__real_max_","st"],[" was his third account.","p"]],
+    priv:[["[REPORTER]","idr"],[" reported a coercive threat: ","p"],["the sender demanded additional images and threatened to publish existing ones","hm"],[". The account was ","p"],["[author]’s","str"],[" third.","p"]] },
 ];
 
-const state = {
-  theme: 'paper',
-  mode: 'simple',
-  rows: [],
-  fileName: 'helpline_reports_demo.jsonl',
-  text: null,                // uploaded raw text (else demo)
-  privacy: 0.65, utility: 0.72, context: 1,
-  busy: false,
-  result: null,
-  released: null,
-  // live editor
-  editorRaw: "Honestly, Marcus keeps texting me from 555-0142 saying he'll show up at my flat on Rue Lavoisier. Reach me at anca.dragan@mail.com.",
-  editorOut: null,
-  editBusy: false,
-  // advanced playground
-  demos: null,        // per-slider low/high comparisons (fixed)
-  combined: null,     // all-three-together output (live)
-  combBusy: false,
-  // upload dataset
-  datasetName: null,
-  datasetText: null,
-  datasetResult: null,
-  datasetBusy: false,
+const HARM = {
+  raw:[["Lena","id"],[" reported: he called me ","p"],["an [ethnic-slur]","hm"],[" and said “","p"],["women like you don’t belong in this country","hm"],[".” It happened on the bus.","p"]],
+  bad:[["“","p"],["[ethnic-slur]","hm"],["” … “","p"],["women like you don’t belong in this country","hm"],[".”","p"]],
+  fixed:[["[REPORTER]","idr"],[" reported being targeted: an ","p"],["ethnic slur","hm"],[" was directed at her, and she was told that ","p"],["“women like her don’t belong in this country.”","hm"],[" The slur and statement were said TO her, not by her.","p"]],
 };
 
-// What each slider actually does — shown beneath every slider.
+// ---- state ------------------------------------------------------------------
+const state = {
+  theme: 'paper',
+  step: 'source',            // source | privatize | harm | release | live
+  // workflow demo (mock)
+  processing: false,
+  processDone: false,
+  procStage: 0,
+  selMsg: 0,
+  l1: true, l2: true, l3: true,
+  harmResolved: false,
+  released: false,
+  pickNotice: false,
+  fileName: 'helpline_reports_2019–2025.jsonl',
+  // live editor (real backend)
+  privacy: 0.65, utility: 0.72, context: 1,
+  liveText: "Honestly, Marcus keeps texting me from 555-0142 saying he'll show up at my flat on Rue Lavoisier. Reach me at anca.dragan@mail.com.",
+  liveOut: null,
+  liveBusy: false,
+};
+
+// live-editor sliders — these genuinely change the backend output.
 const SLIDERS = [
-  {k:'privacy', label:'Privacy strength', min:0.3, max:0.95, step:0.01, fmt:v=>v.toFixed(2),
-   desc:'How hard the editor drops author-identifying / risky tokens. ↑ more scrubbed → more private, less readable.'},
-  {k:'utility', label:'Utility strength', min:0.3, max:0.95, step:0.01, fmt:v=>v.toFixed(2),
-   desc:'How much harm / task evidence is kept for the detector. ↑ retains more of the signal a triage model needs.'},
-  {k:'context', label:'Context window', min:0, max:3, step:1, ticks:[0,1,2,3], fmt:v=>`${v} word${v==1?'':'s'}`,
-   desc:'Neighbouring words kept around each retained term, for readability. ↑ more surrounding context, longer output.'},
-];
-
-function sliderControl(s) {
-  const v = state[s.k];
-  const ticks = s.ticks ? `<div class="ticks">${s.ticks.map(t=>`<span>${t}</span>`).join('')}</div>` : '';
-  return `<div class="ctrl">
-    <label>${s.label} <b id="${s.k}v">${s.fmt(v)}</b></label>
-    <input id="${s.k}" type="range" ${s.ticks?'class="stepped"':''} min="${s.min}" max="${s.max}" step="${s.step}" value="${v}">
-    ${ticks}
-    <div class="ctrl-desc">${s.desc}</div>
-  </div>`;
-}
-function sliderBlock() {
-  return `<div class="controls">${SLIDERS.map(sliderControl).join('')}</div>`;
-}
-
-// One fixed block of text used across every example so each slider's effect is
-// comparable on the same input.
-const DEMO_TEXT = "Honestly, Marcus keeps texting me from 555-0142 saying he'll show up at my flat on Rue Lavoisier. Reach me at anca.dragan@mail.com.";
-
-const SLIDER_DEMOS = [
-  {k:'privacy', label:'Privacy strength', lowCap:'0.40 · keeps more', highCap:'0.92 · scrubs more',
-   low:{privacy_strength:0.40,utility_strength:0.72,context_window:1},
-   high:{privacy_strength:0.92,utility_strength:0.72,context_window:1}},
-  {k:'utility', label:'Utility strength', lowCap:'0.40 · trims hard', highCap:'0.92 · keeps evidence',
-   low:{privacy_strength:0.65,utility_strength:0.40,context_window:1},
-   high:{privacy_strength:0.65,utility_strength:0.92,context_window:1}},
-  {k:'context', label:'Context window', lowCap:'0 words · keywords only', highCap:'3 words · full context',
-   low:{privacy_strength:0.65,utility_strength:0.72,context_window:0},
-   high:{privacy_strength:0.65,utility_strength:0.72,context_window:3}},
+  {k:'privacy', label:'Privacy strength', min:0.3, max:0.95, step:0.01, fmt:v=>(+v).toFixed(2),
+   desc:'How hard the editor drops author-identifying / risky tokens. ↑ more scrubbed, less readable.'},
+  {k:'utility', label:'Utility strength', min:0.3, max:0.95, step:0.01, fmt:v=>(+v).toFixed(2),
+   desc:'How much harm / task evidence is kept for the detector. ↑ retains more signal.'},
+  {k:'context', label:'Context window', min:0, max:3, step:1, fmt:v=>`${v} word${(+v)==1?'':'s'}`,
+   desc:'Neighbouring words kept around each retained term, for readability.'},
 ];
 
 // ---- helpers ----------------------------------------------------------------
 const $ = (s, r=document) => r.querySelector(s);
-const pct = x => (x==null ? '—' : Math.round(x*100) + '%');
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const phHi = s => esc(s).replace(/\[[A-Z_]+\]/g, m => `<span class="ph">${m}</span>`);
 
-// Mark, on the RAW input, every word the editor changed/removed — i.e. words not
-// present in the privatized output (redactions become placeholders, dropped
-// low-evidence words simply vanish). Shown everywhere raw text appears.
+// Mark, on the RAW input, every word the editor changed/removed — words not
+// present in the privatized output.
 function markRaw(raw, edited) {
   if (!edited) return esc(raw);
   const kept = new Set((String(edited).toLowerCase().match(/[a-z0-9']+/g) || []));
   return esc(raw).replace(/[A-Za-z0-9']+/g, w => kept.has(w.toLowerCase()) ? w : `<span class="changed">${w}</span>`);
 }
-
-function applyTheme(name) {
-  const t = THEMES[name]; const r = document.documentElement.style;
-  for (const k in t) r.setProperty('--' + k, t[k]);
+function countChanged(raw, edited) {
+  const kept = new Set((String(edited).toLowerCase().match(/[a-z0-9']+/g) || []));
+  return (raw.match(/[A-Za-z0-9']+/g) || []).filter(w => !kept.has(w.toLowerCase())).length;
 }
+
+// span styling for the mock before/after diff, honouring the L1/L2/L3 toggles.
+function spanStyle(type, L) {
+  const base = 'border-radius:3px;padding:0 2px;white-space:pre-wrap;';
+  if ((type === 'id' || type === 'idr') && L.l1) return 'background:var(--l1-bg);color:var(--l1);' + base;
+  if (type === 'hm' && L.l2) return 'background:var(--l2-bg);color:var(--l2);' + base;
+  if ((type === 'st' || type === 'str') && L.l3) return 'background:var(--l3-bg);color:var(--l3);' + base;
+  return 'color:inherit;white-space:pre-wrap;';
+}
+function styleSpans(spans, L) {
+  return (spans || []).map(s => `<span style="${spanStyle(s[1], L)}">${esc(s[0])}</span>`).join('');
+}
+
+function themeVars() {
+  const t = THEMES[state.theme] || THEMES.paper;
+  return Object.keys(t).map(k => `--${k}:${t[k]}`).join(';') + ';';
+}
+
+function set(partial) { Object.assign(state, partial); render(); }
 
 async function api(path, body) {
   const opt = body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {};
@@ -115,321 +124,544 @@ async function api(path, body) {
   return res.json();
 }
 
-// ---- actions ----------------------------------------------------------------
-let _liveTimer = null;
-function scheduleLive() {
-  clearTimeout(_liveTimer);
-  if (state.mode === 'simple') _liveTimer = setTimeout(runEdit, 300);
-  else if (state.mode === 'advanced') _liveTimer = setTimeout(runCombined, 250);
+// ---- workflow demo actions (mock) -------------------------------------------
+let timers = [];
+function go(key) {
+  if (key === 'source' || key === 'live') return set({ step: key });
+  if (!state.processDone) return;            // 02–04 locked until the demo run finishes
+  set({ step: key });
 }
 
-async function runEdit() {
-  if (!state.editorRaw.trim()) return;
-  state.editBusy = true;
-  const out = $('#edOut'); if (out) out.innerHTML = '<span class="spin"></span> privatizing on device…';
-  const r = await api('/api/edit', {
-    text: state.editorRaw,
-    privacy_strength: state.privacy, utility_strength: state.utility, context_window: state.context,
-  });
-  state.editBusy = false;
-  if (r.error) { if (out) out.textContent = 'Error: ' + r.error; return; }
-  state.editorOut = r;
-  // patch the DOM in place so the textarea keeps focus + caret
-  if (out) out.innerHTML = phHi(r.edited);
-  const marked = $('#edRawMarked'); if (marked) marked.innerHTML = markRaw(state.editorRaw, r.edited);
-  const st = $('#edStats');
-  if (st) st.innerHTML = `<span class="chip changed-chip">${countChanged(state.editorRaw, r.edited)} words changed</span>
-    <span class="chip id">${r.identifiers} identifiers</span>
-    <span class="chip keep">${r.chars_in}→${r.chars_out} chars</span>`;
-}
-
-function countChanged(raw, edited) {
-  const kept = new Set((String(edited).toLowerCase().match(/[a-z0-9']+/g) || []));
-  const words = raw.match(/[A-Za-z0-9']+/g) || [];
-  return words.filter(w => !kept.has(w.toLowerCase())).length;
-}
-
-async function runSliderDemos() {
-  if (state.demos) return;
-  const results = {};
-  await Promise.all(SLIDER_DEMOS.map(async d => {
-    const [low, high] = await Promise.all([
-      api('/api/edit', {...d.low, text: DEMO_TEXT}),
-      api('/api/edit', {...d.high, text: DEMO_TEXT}),
-    ]);
-    results[d.k] = {low, high};
-  }));
-  state.demos = results;
-  SLIDER_DEMOS.forEach(d => {
-    const r = state.demos[d.k];
-    const lo = $('#demo-'+d.k+'-low'); if (lo) lo.innerHTML = phHi(r.low.edited);
-    const hi = $('#demo-'+d.k+'-high'); if (hi) hi.innerHTML = phHi(r.high.edited);
-  });
-}
-
-async function runCombined() {
-  state.combBusy = true;
-  const out = $('#comb-out'); if (out) out.innerHTML = '<span class="spin"></span>';
-  const r = await api('/api/edit', {
-    text: DEMO_TEXT,
-    privacy_strength: state.privacy, utility_strength: state.utility, context_window: state.context,
-  });
-  state.combBusy = false; state.combined = r;
-  if (out) out.innerHTML = r.error ? esc(r.error) : phHi(r.edited);
-  const marked = $('#fixed-marked'); if (marked && !r.error) marked.innerHTML = markRaw(DEMO_TEXT, r.edited);
-  const st = $('#comb-stat');
-  if (st) st.innerHTML = r.error ? '' :
-    `<span class="chip changed-chip">${countChanged(DEMO_TEXT, r.edited)} words changed</span>
-     <span class="chip id">${r.identifiers} identifiers</span><span class="chip keep">${r.chars_in}→${r.chars_out} chars</span>
-     <span class="chip risk">P ${state.privacy.toFixed(2)} · U ${state.utility.toFixed(2)} · C ${state.context}</span>`;
-}
-
-// ---- upload dataset ----
-async function uploadDataset(file) {
-  state.datasetName = file.name;
-  state.datasetText = await file.text();
-  state.datasetResult = null;
-  await runDataset();
-}
-async function runDataset() {
-  if (!state.datasetText) return;
-  state.datasetBusy = true; render();
-  const r = await api('/api/dataset', {
-    text: state.datasetText, filename: state.datasetName,
-    privacy_strength: state.privacy, utility_strength: state.utility, context_window: state.context,
-  });
-  state.datasetBusy = false;
-  state.datasetResult = r;
+function run() {
+  if (state.processing) return;
+  Object.assign(state, { step:'privatize', processing:true, processDone:false, procStage:0 });
   render();
-}
-function csvCell(s) {
-  s = String(s == null ? '' : s);
-  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
-function downloadDataset() {
-  const r = state.datasetResult;
-  if (!r || r.error) return;
-  const csv = 'ID,text\n' + r.messages.map(m => `${csvCell(m.code)},${csvCell(m.edited)}`).join('\n');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  const base = (state.datasetName || 'dataset').replace(/\.[^.]+$/, '');
-  const a = document.createElement('a');
-  a.href = url; a.download = base + '_privatized.csv'; a.click();
-  URL.revokeObjectURL(url);
+  timers.forEach(clearTimeout); timers = [];
+  timers.push(setTimeout(() => set({ procStage:1 }), 500));
+  timers.push(setTimeout(() => set({ procStage:2 }), 1500));
+  timers.push(setTimeout(() => set({ procStage:3 }), 2500));
+  timers.push(setTimeout(() => set({ processing:false, processDone:true }), 3400));
 }
 
-function setMode(id) { state.mode = id; render(); }
-
-// ---- rendering --------------------------------------------------------------
-function render() {
-  const nav = $('#nav');
-  nav.innerHTML = MODES.map(m =>
-    `<div class="step ${m.id===state.mode?'on':''}" data-mode="${m.id}">
-      <span class="num">${m.icon}</span><span class="lbl">${m.label}</span></div>`).join('');
-  nav.querySelectorAll('.step').forEach(el => el.onclick = () => setMode(el.dataset.mode));
-  $('#main').innerHTML = VIEWS[state.mode]();
-  wire();
+let pickTimer = null;
+function pickDisabled() {
+  set({ pickNotice: true });
+  clearTimeout(pickTimer);
+  pickTimer = setTimeout(() => set({ pickNotice:false }), 2600);
 }
 
-function wire() {
-  ['privacy','utility','context'].forEach(k => {
-    const el = $('#'+k); if (!el) return;
-    el.oninput = () => { $('#'+k+'v').textContent = k==='context'? el.value : (+el.value).toFixed(2); };
-    el.onchange = () => { state[k] = +el.value; scheduleLive(); };
+function stState(n) {
+  if (state.processDone) return 'done';
+  const s = state.procStage;
+  if (s > n) return 'done';
+  if (s === n) return 'active';
+  return 'idle';
+}
+function mkStage(n) {
+  const st = stState(n);
+  const base = "width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px 'IBM Plex Mono',monospace;flex:none;";
+  if (st === 'done')   return { dot: base+'background:var(--safe);color:#fff;', glyph:'✓', txt:'var(--safe)', status:'done' };
+  if (st === 'active') return { dot: base+'background:var(--accent);color:var(--accent-fg);animation:agpulse 1s ease-in-out infinite;', glyph:String(n), txt:'var(--accent)', status:'running…' };
+  return { dot: base+'background:transparent;border:1.5px solid var(--border-strong);color:var(--faint);', glyph:String(n), txt:'var(--faint)', status:'queued' };
+}
+
+function chip(on, kind) {
+  const c = on
+    ? `background:var(--${kind}-bg);color:var(--${kind});border:1px solid var(--${kind});`
+    : 'background:transparent;color:var(--muted);border:1px solid var(--border);';
+  return "display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;font:600 11.5px 'IBM Plex Mono',monospace;cursor:pointer;user-select:none;" + c;
+}
+function dot(on, kind) { return `width:8px;height:8px;border-radius:50%;background:${on?`var(--${kind})`:'var(--faint)'};`; }
+
+// ---- live editor actions (real backend) -------------------------------------
+let liveTimer = null;
+function scheduleLive() { clearTimeout(liveTimer); liveTimer = setTimeout(runLive, 300); }
+
+async function runLive() {
+  if (!state.liveText.trim()) {
+    state.liveOut = null;
+    const out = $('#liveOut'); if (out) out.innerHTML = '<span style="color:var(--faint);">Privatized text appears here.</span>';
+    const marked = $('#liveMarked'); if (marked) marked.innerHTML = '';
+    const st = $('#liveStats'); if (st) st.innerHTML = '';
+    return;
+  }
+  state.liveBusy = true;
+  const out = $('#liveOut'); if (out) out.innerHTML = '<span class="spin"></span> privatizing…';
+  const r = await api('/api/edit', {
+    text: state.liveText,
+    privacy_strength: state.privacy, utility_strength: state.utility, context_window: state.context,
   });
-  const raw = $('#rawIn');
-  if (raw) raw.oninput = () => { state.editorRaw = raw.value; scheduleEditMarks(); scheduleLive(); };
-  const editBtn = $('#editBtn'); if (editBtn) editBtn.onclick = runEdit;
-  const dsFile = $('#dsFile');
-  if (dsFile) dsFile.onchange = e => { const f = e.target.files[0]; if (f) uploadDataset(f); };
-  const dsRun = $('#dsRun'); if (dsRun) dsRun.onclick = runDataset;
-  const dsDl = $('#dsDl'); if (dsDl) dsDl.onclick = downloadDataset;
-  if (state.mode === 'simple' && !state.editBusy) runEdit();
-  if (state.mode === 'advanced') { runSliderDemos(); if (!state.combined && !state.combBusy) runCombined(); }
+  state.liveBusy = false;
+  if (r.error) { if (out) out.textContent = 'Error: ' + r.error; return; }
+  state.liveOut = r;
+  patchLive();
 }
 
-// keep the marked-input pane in sync while typing, even before the debounced edit
-function scheduleEditMarks() {
-  const marked = $('#edRawMarked');
-  if (marked && state.editorOut) marked.innerHTML = markRaw(state.editorRaw, state.editorOut.edited);
+// patch the live panes in place so the textarea keeps focus + caret
+function patchLive() {
+  const r = state.liveOut; if (!r) return;
+  const out = $('#liveOut'); if (out) out.innerHTML = phHi(r.edited);
+  const marked = $('#liveMarked'); if (marked) marked.innerHTML = markRaw(state.liveText, r.edited);
+  const st = $('#liveStats');
+  if (st) st.innerHTML =
+    `<span style="${statChip('danger')}">${countChanged(state.liveText, r.edited)} words changed</span>
+     <span style="${statChip('l1')}">${r.identifiers} identifiers</span>
+     <span style="${statChip('l2')}">${r.chars_in}→${r.chars_out} chars</span>`;
+}
+function statChip(kind) {
+  return `font:600 11px 'IBM Plex Mono',monospace;padding:3px 8px;border-radius:5px;background:var(--${kind}-bg);color:var(--${kind});`;
+}
+
+// ============================================================================
+//  RENDER
+// ============================================================================
+function render() {
+  const root = document.getElementById('app');
+  root.innerHTML = `
+    <div style="${themeVars()}min-height:100vh;width:100%;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;font-family:'Public Sans',sans-serif;">
+      <div style="width:1180px;max-width:calc(100vw - 36px);height:min(800px,calc(100vh - 36px));background:var(--win);border-radius:12px;box-shadow:0 30px 80px var(--shadow),0 2px 6px rgba(0,0,0,.05);border:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+        ${titlebar()}
+        <div style="flex:1;display:flex;overflow:hidden;">
+          ${sidebar()}
+          <div style="flex:1;overflow:auto;background:var(--panel2);padding:26px 28px;">
+            ${VIEWS[state.step] ? VIEWS[state.step]() : VIEWS.source()}
+          </div>
+        </div>
+        ${statusbar()}
+      </div>
+    </div>`;
+  wire();
+  if (state.step === 'live') runLive();
+}
+
+function titlebar() {
+  return `
+    <div style="height:46px;flex:none;display:flex;align-items:center;gap:14px;padding:0 16px;background:var(--titlebar);border-bottom:1px solid var(--border);">
+      <div style="display:flex;gap:8px;align-items:center;flex:none;">
+        <span style="width:12px;height:12px;border-radius:50%;background:#ff5f57;"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#febc2e;"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#28c840;"></span>
+      </div>
+      <div style="flex:1;text-align:center;font:600 13px 'Public Sans',sans-serif;color:var(--fg);">AgnoSpeech <span style="color:var(--muted);font-weight:400;">— Local Privatization Workbench</span></div>
+      <div style="flex:none;width:54px;"></div>
+    </div>`;
+}
+
+function navWorkflow(key, num, label, badge) {
+  const active = state.step === key;
+  const locked = key !== 'source' && !state.processDone;
+  const bg = active ? 'var(--sidebar-active)' : 'transparent';
+  const fg = active ? 'var(--accent)' : (locked ? 'var(--faint)' : 'var(--fg2)');
+  const op = locked ? '0.5' : '1';
+  const bar = active ? 'var(--accent)' : 'transparent';
+  const weight = active ? '600' : '500';
+  const cursor = locked ? 'not-allowed' : 'pointer';
+  const badgeHtml = badge
+    ? `<span style="margin-left:auto;font:600 10px 'IBM Plex Mono',monospace;background:var(--warn-bg);color:var(--warn);padding:2px 6px;border-radius:5px;">${badge}</span>`
+    : '';
+  return `
+    <button data-go="${key}" style="position:relative;display:flex;align-items:center;gap:11px;width:100%;text-align:left;border:none;background:${bg};color:${fg};opacity:${op};font:${weight} 13.5px 'Public Sans',sans-serif;padding:11px 14px 11px 16px;border-radius:8px;cursor:${cursor};">
+      <span style="position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:2px;background:${bar};"></span>
+      <span style="font:600 10px 'IBM Plex Mono',monospace;color:var(--faint);width:14px;">${num}</span>${label}${badgeHtml}
+    </button>`;
+}
+
+function navLive() {
+  const active = state.step === 'live';
+  const bg = active ? 'var(--sidebar-active)' : 'transparent';
+  const fg = active ? 'var(--accent)' : 'var(--fg2)';
+  const bar = active ? 'var(--accent)' : 'transparent';
+  const weight = active ? '600' : '500';
+  return `
+    <button data-go="live" style="position:relative;display:flex;align-items:center;gap:11px;width:100%;text-align:left;border:none;background:${bg};color:${fg};font:${weight} 13.5px 'Public Sans',sans-serif;padding:11px 14px 11px 16px;border-radius:8px;cursor:pointer;">
+      <span style="position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:2px;background:${bar};"></span>
+      <span style="font:600 11px 'IBM Plex Mono',monospace;color:var(--faint);width:14px;">✎</span>Live editor
+      <span style="margin-left:auto;font:600 9px 'IBM Plex Mono',monospace;background:var(--accent-soft);color:var(--accent);padding:2px 6px;border-radius:5px;">LIVE</span>
+    </button>`;
+}
+
+function sidebar() {
+  const lockNote = !state.processDone
+    ? `<div style="margin:10px 6px 0;padding:11px 12px;border:1px dashed var(--border-strong);border-radius:8px;font:400 11px/1.5 'Public Sans',sans-serif;color:var(--muted);">Run privatization to unlock the rest of the workflow.</div>`
+    : '';
+  return `
+    <div style="width:236px;flex:none;background:var(--sidebar);border-right:1px solid var(--border);padding:16px 14px;display:flex;flex-direction:column;gap:3px;overflow:auto;">
+      <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.16em;color:var(--faint);padding:4px 14px 10px;">WORKFLOW</div>
+      ${navWorkflow('source',   '01', 'Source')}
+      ${navWorkflow('privatize','02', 'Privatize')}
+      ${navWorkflow('harm',     '03', 'Harm check', (state.processDone && !state.harmResolved) ? '1' : '')}
+      ${navWorkflow('release',  '04', 'Release')}
+      ${lockNote}
+
+      <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.16em;color:var(--faint);padding:18px 14px 8px;">TOOLS</div>
+      ${navLive()}
+
+      <div style="margin-top:auto;padding:13px 12px;border:1px solid var(--border);border-radius:9px;background:var(--panel);">
+        <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.1em;color:var(--faint);margin-bottom:8px;">THIS DEVICE</div>
+        <div style="font:600 12.5px 'Public Sans',sans-serif;color:var(--fg);">Anca’s MacBook</div>
+      </div>
+    </div>`;
+}
+
+function statusbar() {
+  return `
+    <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:var(--titlebar);border-top:1px solid var(--border);font:500 11px 'IBM Plex Mono',monospace;color:var(--muted);">
+      <span style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--safe);"></span>Offline · egress 0 B</span>
+      <span>${esc(state.fileName)}</span>
+      <span>AgnoSpeech 0.9 · on-device only</span>
+    </div>`;
 }
 
 // ---- views ------------------------------------------------------------------
 const VIEWS = {
-  simple() {
-    const o = state.editorOut;
-    const outHtml = state.editBusy ? '<span class="spin"></span> privatizing on device…'
-      : (o ? phHi(o.edited) : '<span class="faint">Privatized text appears here.</span>');
-    const rawMarked = o ? markRaw(state.editorRaw, o.edited) : esc(state.editorRaw);
-    const stats = o ? `<span class="chip changed-chip">${countChanged(state.editorRaw, o.edited)} words changed</span>
-      <span class="chip id">${o.identifiers} identifiers</span>
-      <span class="chip keep">${o.chars_in}→${o.chars_out} chars</span>` : '';
+  // ===================== SOURCE =====================
+  source() {
+    const preview = MSGS.slice(0, 3).map(m => `
+      <div style="border:1px solid var(--border);border-radius:9px;background:var(--panel2);padding:12px 14px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+          <span style="font:600 10.5px 'IBM Plex Mono',monospace;color:var(--faint);">${m.code}</span>
+          <span style="font:600 10.5px 'IBM Plex Mono',monospace;color:var(--muted);">${m.tag}</span>
+        </div>
+        <div style="font:400 13px/1.75 'IBM Plex Mono',monospace;color:var(--fg2);">${styleSpans(m.raw, {l1:true,l2:true,l3:true})}</div>
+      </div>`).join('');
+    const pickNotice = state.pickNotice
+      ? `<span style="font:500 10.5px 'IBM Plex Mono',monospace;color:var(--faint);max-width:170px;text-align:right;">File picking is disabled in this demo.</span>`
+      : '';
     return `
-      <div class="eyebrow">Simple use · holistic editor</div>
-      <h1 class="step-title">Paste text → get a privatized version</h1>
-      <div class="grid cols-2">
-        <div class="card">
-          <h3>Your text <span class="faint" style="font-weight:500">· ${PRIV_NOTE}</span></h3>
-          <textarea id="rawIn" class="pane" placeholder="Paste or type sensitive text…">${esc(state.editorRaw)}</textarea>
-          <div class="ex-label" style="margin-top:12px">WHAT GETS CHANGED <span class="changed-key">highlighted</span></div>
-          <div id="edRawMarked" class="pane out marked">${rawMarked}</div>
+      <div>
+        <div style="margin-bottom:20px;">
+          <div style="font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.14em;color:var(--accent);margin-bottom:7px;">STEP 01 · SOURCE</div>
+          <div style="font:700 23px/1.1 'Public Sans',sans-serif;color:var(--fg);">Source corpus</div>
+          <div style="font:400 14px/1.55 'Public Sans',sans-serif;color:var(--muted);margin-top:6px;max-width:720px;">Load a corpus to privatize. Files are read on this device only — nothing is transmitted.</div>
         </div>
-        <div class="card">
-          <h3>Privatized output <span class="faint" style="font-weight:500">· agnospeech holistic</span></h3>
-          <div id="edOut" class="pane out">${outHtml}</div>
-          <div class="chips" id="edStats">${stats}</div>
+
+        <div style="border:1.5px dashed var(--accent);border-radius:12px;background:var(--accent-soft);padding:16px 18px;margin-bottom:18px;">
+          <div style="display:flex;align-items:center;gap:18px;">
+            <div style="width:46px;height:56px;flex:none;border-radius:6px;background:var(--panel);border:1px solid var(--accent);display:flex;align-items:flex-end;justify-content:center;padding-bottom:7px;">
+              <span style="font:600 9px 'IBM Plex Mono',monospace;color:var(--accent);">JSONL</span>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="width:18px;height:18px;border-radius:50%;background:var(--safe);color:#fff;display:flex;align-items:center;justify-content:center;font:700 11px 'Public Sans';flex:none;">✓</span>
+                <span style="font:600 15px 'Public Sans',sans-serif;color:var(--fg);">${esc(state.fileName)}</span>
+                <span style="font:600 9.5px 'IBM Plex Mono',monospace;background:var(--safe-bg);color:var(--safe);padding:2px 7px;border-radius:5px;">LOADED</span>
+              </div>
+              <div style="font:500 12px 'IBM Plex Mono',monospace;color:var(--muted);margin-top:5px;">20 messages · 42 KB · sha256 verified · read-only mount · loaded from local disk</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:none;">
+              <button data-pick style="border:none;background:none;cursor:pointer;padding:0;font:600 11.5px 'IBM Plex Mono',monospace;color:var(--accent);text-decoration:underline;text-underline-offset:2px;">Choose a different file</button>
+              ${pickNotice}
+            </div>
+          </div>
+          <div style="margin-top:13px;padding-top:12px;border-top:1px dashed var(--border-strong);display:flex;align-items:center;gap:8px;font:500 11px 'IBM Plex Mono',monospace;color:var(--muted);">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="flex:none;"><path d="M12 16V4M12 4l-5 5M12 4l5 5" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"></path></svg>
+            Drag a corpus file here or browse — files are read on this device only and never transmitted.
+          </div>
         </div>
-      </div>
-      <div class="card" style="margin-top:16px">
-        ${sliderBlock()}
-        <div class="note">Updates live as you type or move a slider · ${ENV_NOTE}. Highlighted words on the left are the ones the editor removed or replaced.</div>
+
+        <div style="display:flex;gap:18px;align-items:flex-start;">
+          <div style="flex:1.45;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;min-width:0;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:13px;">
+              <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);">Raw messages — sample</div>
+              <div style="font:500 11px 'IBM Plex Mono',monospace;color:var(--faint);">3 of 20</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:11px;">${preview}</div>
+            <div style="font:400 12px/1.5 'Public Sans',sans-serif;color:var(--muted);margin-top:13px;">Each record contains direct identifiers (reporter and quoted-bystander names), the sender handle, and stylometric traces. These are removed during privatization before any data leaves this device.</div>
+          </div>
+
+          <div style="flex:1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;">
+            <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);margin-bottom:14px;">Privatization plan</div>
+            <div style="display:flex;flex-direction:column;gap:13px;">
+              ${planRow('l1','L1 · Strip direct identifiers','Names of the victims who reported and of the bystanders they quoted.')}
+              ${planRow('l2','L2 · Preserve harm content','Keep the escalation signal a triage detector needs to learn from.')}
+              ${planRow('l3','L3 · Neutralize author style','Scrub idiolect so released text can’t be traced back to the sender.')}
+            </div>
+            <button data-run style="margin-top:16px;width:100%;border:none;cursor:pointer;background:var(--accent);color:var(--accent-fg);font:600 14px 'Public Sans',sans-serif;padding:13px;border-radius:10px;">Run privatization &nbsp;→</button>
+            <div style="text-align:center;font:500 10.5px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:9px;">Runs entirely on this device · no network</div>
+          </div>
+        </div>
       </div>`;
   },
 
-  advanced() {
-    const demoByK = Object.fromEntries(SLIDER_DEMOS.map(d => [d.k, d]));
-    const sliderSections = SLIDERS.map(s => {
-      const d = demoByK[s.k];
-      const r = state.demos && state.demos[s.k];
-      const lo = r ? phHi(r.low.edited) : '<span class="spin"></span>';
-      const hi = r ? phHi(r.high.edited) : '<span class="spin"></span>';
-      return `<div class="card slider-card">
-        ${sliderControl(s)}
-        <div class="grid cols-2 ex-grid" style="margin-top:14px">
-          <div><div class="ex-label">${d.lowCap}</div><div class="pane out" id="demo-${s.k}-low">${lo}</div></div>
-          <div><div class="ex-label">${d.highCap}</div><div class="pane out" id="demo-${s.k}-high">${hi}</div></div>
-        </div></div>`;
-    }).join('');
-    const c = state.combined;
-    const combOut = state.combBusy ? '<span class="spin"></span>'
-      : (c ? (c.error ? esc(c.error) : phHi(c.edited)) : '<span class="spin"></span>');
-    const fixedMarked = (c && !c.error) ? markRaw(DEMO_TEXT, c.edited) : esc(DEMO_TEXT);
-    const combStat = (c && !c.error) ?
-      `<span class="chip changed-chip">${countChanged(DEMO_TEXT, c.edited)} words changed</span>
-       <span class="chip id">${c.identifiers} identifiers</span><span class="chip keep">${c.chars_in}→${c.chars_out} chars</span>
-       <span class="chip risk">P ${state.privacy.toFixed(2)} · U ${state.utility.toFixed(2)} · C ${state.context}</span>` : '';
-    return `
-      <div class="eyebrow">Advanced use · tune the editor</div>
-      <h1 class="step-title">Slider playground — move a slider, watch the text change</h1>
-      <div class="card" style="margin-bottom:16px">
-        <div class="ex-label">THE FIXED SENTENCE <span class="changed-key">changed words highlighted</span></div>
-        <div id="fixed-marked" class="pane out raw-ex marked">${fixedMarked}</div>
-        <div class="note">Each slider below shows its own effect on this sentence — left = low, right = high, other sliders held fixed. ${ENV_NOTE}.</div>
-      </div>
-      <div class="grid" style="gap:16px">${sliderSections}</div>
-      <div class="card" style="margin-top:16px;border-color:var(--accent)">
-        <h3>All three together — live</h3>
-        <div class="sub" style="margin-bottom:10px">The same sentence at your current slider values. Move any slider above and this updates.</div>
-        <div class="pane out" id="comb-out">${combOut}</div>
-        <div class="chips" id="comb-stat">${combStat}</div>
-      </div>
-      <div class="note" style="margin-top:14px">To privatize a whole CSV/JSON file, use the <b>Upload dataset</b> tab.</div>`;
-  },
+  // ===================== PRIVATIZE =====================
+  privatize() {
+    const head = `
+      <div style="margin-bottom:20px;">
+        <div style="font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.14em;color:var(--accent);margin-bottom:7px;">STEP 02 · PRIVATIZE</div>
+        <div style="font:700 23px/1.1 'Public Sans',sans-serif;color:var(--fg);">Privatization — before / after</div>
+      </div>`;
 
-  upload() {
-    const r = state.datasetResult;
-    const drop = `
-      <label class="dropzone">
-        <div class="dz-plus">+</div>
-        <div class="dz-title">${state.datasetName ? esc(state.datasetName) : 'Drop a CSV / JSON file, or click to browse'}</div>
-        <div class="dz-sub">The editor infers the text column (and author/label if present) from the file.</div>
-        <input id="dsFile" type="file" accept=".csv,.json,.jsonl" hidden>
-      </label>`;
-    const controls = state.datasetText ? `
-      <div class="card" style="margin-top:16px">
-        ${sliderBlock()}
-        <div class="row" style="justify-content:center;margin-top:8px">
-          <button class="btn" id="dsRun" ${state.datasetBusy?'disabled':''}>
-            ${state.datasetBusy?'<span class="spin"></span> Privatizing dataset…':'Re-privatize with these settings &nbsp;→'}</button>
-        </div>
-        <div class="note" style="text-align:center">Holistic editor · ${ENV_NOTE}. Adjust the sliders, then re-privatize.</div>
-      </div>` : '';
-    let results = '';
-    if (state.datasetBusy && !r) {
-      results = `<div class="card" style="margin-top:16px;text-align:center"><span class="spin"></span> processing ${esc(state.datasetName||'')}…</div>`;
-    } else if (r && r.error) {
-      results = `<div class="card" style="margin-top:16px"><div class="sub" style="color:var(--danger)">${esc(r.error)}</div></div>`;
-    } else if (r) {
-      const ms = r.messages.slice(0, 60);
-      const rowsHtml = ms.map(m => `
-        <div class="msg">
-          <div class="row"><span class="code">${esc(m.code)}${m.author?` · ${esc(m.author)}`:''}</span>
-            ${m.hs!=null?`<span class="tag ${m.hs==1?'hs1':'hs0'}">${m.hs==1?'harm':'benign'}</span>`:''}</div>
-          <div class="bl faint mono" style="font-size:9.5px;margin-top:6px">ORIGINAL · changed words highlighted</div>
-          <div class="txt muted">${markRaw(m.raw, m.edited)}</div>
-          <div class="arrow">↓ privatized</div>
-          <div class="edit">${phHi(m.edited)}</div>
-          <div class="chips">${m.placeholders.map(p=>`<span class="chip id">${esc(p)}</span>`).join('')}</div>
-        </div>`).join('');
-      results = `
-        <div class="card" style="margin-top:16px">
-          <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
-            <h3 style="margin:0">Privatized dataset <span class="faint" style="font-weight:500">· ${r.counts.messages.toLocaleString()} rows · ${r.counts.identifiers_removed} identifiers removed${r.counts.has_labels?'':' · no label column'}</span></h3>
-            <button class="btn tiny" id="dsDl">Download privatized CSV</button>
+    if (state.processing) {
+      const s1 = mkStage(1), s2 = mkStage(2), s3 = mkStage(3);
+      const stageRow = (s, title, sub) => `
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:var(--panel);">
+          <div style="${s.dot}">${s.glyph}</div>
+          <div style="flex:1;"><div style="font:600 13.5px 'Public Sans',sans-serif;color:var(--fg);">${title}</div><div style="font:400 12px 'Public Sans',sans-serif;color:var(--muted);">${sub}</div></div>
+          <div style="font:600 11px 'IBM Plex Mono',monospace;color:${s.txt};">${s.status}</div>
+        </div>`;
+      return `${head}
+        <div style="max-width:560px;margin:40px auto;">
+          <div style="text-align:center;font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.14em;color:var(--accent);margin-bottom:20px;">PROCESSING · ON DEVICE</div>
+          <div style="display:flex;flex-direction:column;gap:11px;">
+            ${stageRow(s1,'L1 · Strip direct identifiers','Reporters and quoted bystanders')}
+            ${stageRow(s2,'L2 · Preserve harm content','Escalation signal for the detector')}
+            ${stageRow(s3,'L3 · Neutralize author style','Stylometric scrub against authorship attack')}
           </div>
-          <div style="margin-top:12px">${rowsHtml}</div>
-          ${r.messages.length>60?`<div class="note">Showing 60 of ${r.messages.length.toLocaleString()} rows — the download has them all.</div>`:''}
+          <div style="position:relative;height:6px;border-radius:3px;background:var(--inset);overflow:hidden;margin-top:22px;">
+            <div style="position:absolute;top:0;bottom:0;width:30%;background:var(--accent);border-radius:3px;animation:agscan 1.1s linear infinite;"></div>
+          </div>
+          <div style="text-align:center;font:500 11px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:13px;">0 bytes transmitted · raw text never leaves this device</div>
         </div>`;
     }
-    return `
-      <div class="eyebrow">Upload dataset · holistic</div>
-      <h1 class="step-title">Upload a CSV / JSON → see the privatized dataset</h1>
-      ${drop}
-      ${controls}
-      ${results}`;
+
+    if (!state.processDone) {
+      return `${head}<div style="font:400 14px 'Public Sans';color:var(--muted);">Run privatization from the Source step first.</div>`;
+    }
+
+    const L = { l1: state.l1, l2: state.l2, l3: state.l3 };
+    const cur = MSGS[state.selMsg] || MSGS[0];
+    const msgList = MSGS.map((m, i) => {
+      const active = i === state.selMsg;
+      const style = 'display:block;width:100%;text-align:left;border-radius:9px;padding:11px 13px;cursor:pointer;'
+        + (active ? 'border:1px solid var(--accent);background:var(--accent-soft);' : 'border:1px solid var(--border);background:var(--panel);');
+      const codeColor = active ? 'var(--accent)' : 'var(--muted)';
+      return `
+        <button data-msg="${i}" style="${style}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font:600 11px 'IBM Plex Mono',monospace;color:${codeColor};">${m.code}</span>
+            <span style="font:500 10px 'IBM Plex Mono',monospace;color:var(--faint);">${m.tag}</span>
+          </div>
+        </button>`;
+    }).join('');
+
+    return `${head}
+      <div style="display:flex;gap:18px;align-items:flex-start;">
+        <div style="width:262px;flex:none;display:flex;flex-direction:column;gap:9px;">
+          <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:var(--faint);margin-bottom:1px;">MESSAGES</div>
+          ${msgList}
+        </div>
+
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+            <span style="font:500 11px 'Public Sans',sans-serif;color:var(--muted);margin-right:4px;">Layers</span>
+            <button data-tog="l1" style="${chip(state.l1,'l1')}"><span style="${dot(state.l1,'l1')}"></span>L1 identifiers</button>
+            <button data-tog="l2" style="${chip(state.l2,'l2')}"><span style="${dot(state.l2,'l2')}"></span>L2 harm</button>
+            <button data-tog="l3" style="${chip(state.l3,'l3')}"><span style="${dot(state.l3,'l3')}"></span>L3 style</button>
+          </div>
+
+          <div style="background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:16px 18px;margin-bottom:12px;">
+            <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:var(--faint);margin-bottom:9px;">RAW · ${cur.code}</div>
+            <div style="font:400 14px/1.85 'IBM Plex Mono',monospace;color:var(--fg2);">${styleSpans(cur.raw, L)}</div>
+          </div>
+
+          <div style="display:flex;justify-content:center;margin:2px 0 12px;"><span style="font:600 11px 'IBM Plex Mono',monospace;color:var(--accent);">↓ privatized</span></div>
+
+          <div style="background:var(--panel);border:1px solid var(--accent);border-radius:11px;padding:16px 18px;">
+            <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:var(--accent);margin-bottom:9px;">PRIVATIZED · RELEASABLE</div>
+            <div style="font:400 14px/1.85 'IBM Plex Mono',monospace;color:var(--fg2);">${styleSpans(cur.priv, L)}</div>
+            <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--border);font:500 12px/1.5 'Public Sans',sans-serif;color:var(--muted);">${cur.note}</div>
+          </div>
+        </div>
+      </div>`;
   },
 
-  info() {
+  // ===================== HARM CHECK =====================
+  harm() {
+    const restored = state.harmResolved ? `
+      <div>
+        <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:var(--safe);margin-bottom:8px;">RESTORED — APPROVED FOR RELEASE</div>
+        <div style="font:400 14px/1.8 'IBM Plex Mono',monospace;color:var(--fg2);border:1px solid var(--safe);border-radius:9px;padding:13px 15px;background:var(--safe-bg);">${styleSpans(HARM.fixed, {l1:true,l2:true,l3:true})}</div>
+        <div style="display:flex;align-items:center;gap:9px;margin-top:12px;font:500 12px 'IBM Plex Mono',monospace;color:var(--safe);"><span style="width:20px;height:20px;border-radius:50%;background:var(--safe);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;">✓</span>Resolved by human review · reporting frame restored, harm content preserved.</div>
+      </div>` : '';
+    const actions = !state.harmResolved ? `
+      <div style="display:flex;gap:10px;padding-top:4px;">
+        <button data-restore style="border:none;cursor:pointer;background:var(--accent);color:var(--accent-fg);font:600 13px 'Public Sans',sans-serif;padding:11px 18px;border-radius:9px;">Restore reporting frame &amp; approve</button>
+        <button style="border:1px solid var(--border-strong);cursor:pointer;background:var(--panel);color:var(--fg2);font:600 13px 'Public Sans',sans-serif;padding:11px 18px;border-radius:9px;">Keep on hold</button>
+      </div>` : '';
     return `
-      <div class="eyebrow">Info</div>
-      <h1 class="step-title">About AgnoSpeech</h1>
-      <div class="grid cols-2">
-        <div class="card">
-          <h3>What it does</h3>
-          <div class="sub" style="line-height:1.7">
-            AgnoSpeech is a privacy-preserving text minimizer for hate-speech detection.
-            Its <b>holistic editor</b> runs entirely on this device — no LLM, no cloud, no
-            hate-word lexicon. It redacts direct identifiers (names, phones, emails,
-            locations → typed placeholders), keeps the harm evidence a detector needs,
-            and thins author-identifying style. ${HOSTED ? 'No LLM and no cloud AI — the editor runs in a serverless function and stores nothing; the desktop app runs the same editor fully on-device.' : 'No LLM, no cloud — raw text never leaves the machine.'}
-          </div>
-          <div class="note" style="margin-top:12px">Built for the Council of Europe
-            “Hack the Hate, Renew Democracy” Democracy Hackathon, Strasbourg 2026.</div>
+      <div>
+        <div style="margin-bottom:18px;">
+          <div style="font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.14em;color:var(--accent);margin-bottom:7px;">STEP 03 · HARM PRESERVATION CHECK</div>
+          <div style="font:700 23px/1.1 'Public Sans',sans-serif;color:var(--fg);">Harm Preservation Check</div>
+          <div style="font:400 14px/1.55 'Public Sans',sans-serif;color:var(--muted);margin-top:6px;max-width:720px;">Flags messages where privatization altered the speaker role — e.g. a reported account of abuse that now reads as authored by the reporter. Flagged items are held for human review before release.</div>
         </div>
-        <div class="card">
-          <h3>Repository</h3>
-          <div class="sub">Source, the <span class="mono">agnospeech</span> library, the research spine and this workbench:</div>
-          <div style="margin-top:12px">
-            <a class="btn" href="${REPO_URL}" target="_blank" rel="noopener">Open the GitHub repo ↗</a>
-          </div>
-          <div class="mono sub" style="margin-top:10px">${REPO_URL.replace('https://','')}</div>
-          <h3 style="margin-top:20px">Creators</h3>
-          <ul class="custody" style="gap:7px">
-            <li>Maxim Dnestreanschii — backend &amp; deployment</li>
-            <li>Gabriel Creanga — UI/UX developer</li>
-            <li>Vlad Garbuz — legal expert</li>
-            <li>Chirill Donos — NLP Engineer &amp; Team Lead</li>
-          </ul>
+
+        <div style="display:flex;gap:12px;margin-bottom:18px;">
+          <div style="flex:1;background:var(--panel);border:1px solid var(--border);border-radius:11px;padding:14px 18px;"><div style="font:700 22px 'Public Sans';color:var(--safe);">19</div><div style="font:500 11px 'IBM Plex Mono',monospace;color:var(--muted);margin-top:3px;">passed — harm framing intact</div></div>
+          <div style="flex:1;background:var(--warn-bg);border:1px solid var(--warn);border-radius:11px;padding:14px 18px;"><div style="font:700 22px 'Public Sans';color:var(--warn);">${state.harmResolved ? '0' : '1'}</div><div style="font:500 11px 'IBM Plex Mono',monospace;color:var(--warn);margin-top:3px;">held for human review</div></div>
         </div>
+
+        <div style="background:var(--panel);border:1px solid var(--warn);border-radius:12px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:11px;padding:13px 18px;background:var(--warn-bg);border-bottom:1px solid var(--warn);">
+            <span style="font:600 11px 'IBM Plex Mono',monospace;color:var(--warn);">MSG-7742</span>
+            <span style="font:600 11px 'IBM Plex Mono',monospace;background:var(--warn);color:#fff;padding:3px 8px;border-radius:5px;">SPEAKER-ROLE INVERSION</span>
+            <span style="margin-left:auto;font:500 11px 'IBM Plex Mono',monospace;color:var(--warn);">${state.harmResolved ? 'resolved' : 'awaiting human review'}</span>
+          </div>
+
+          <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;">
+            <div>
+              <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:var(--faint);margin-bottom:8px;">RAW — VICTIM’S ACCOUNT</div>
+              <div style="font:400 14px/1.8 'IBM Plex Mono',monospace;color:var(--fg2);border:1px solid var(--border);border-radius:9px;padding:13px 15px;background:var(--panel2);">${styleSpans(HARM.raw, {l1:true,l2:true,l3:true})}</div>
+            </div>
+
+            <div>
+              <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.12em;color:var(--danger);margin-bottom:8px;">PRIVATIZED — FLAGGED OUTPUT</div>
+              <div style="font:400 14px/1.8 'IBM Plex Mono',monospace;color:var(--fg2);border:1px solid var(--danger);border-radius:9px;padding:13px 15px;background:var(--danger-bg);">${styleSpans(HARM.bad, {l1:true,l2:true,l3:true})}</div>
+              <div style="font:500 12px/1.5 'Public Sans',sans-serif;color:var(--danger);margin-top:8px;">The reporting frame (“reported: he called me…”) was dropped, so the quoted abuse now stands alone and would be labeled as authored by the reporter. Restore the reporting frame before release.</div>
+            </div>
+
+            ${restored}
+            ${actions}
+          </div>
+        </div>
+      </div>`;
+  },
+
+  // ===================== RELEASE =====================
+  release() {
+    const right = !state.released ? `
+      <div style="flex:1;">
+        <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);margin-bottom:8px;">Release package</div>
+        <div style="font:400 12.5px/1.55 'Public Sans',sans-serif;color:var(--muted);">Packages the artifacts listed at left into a single auditable archive. The raw corpus stays on this device.</div>
       </div>
-      <div class="card" style="margin-top:16px">
-        <h3>Scope &amp; honesty</h3>
-        <ul class="custody" style="gap:7px">
-          <li>${HOSTED
-            ? 'This is a <b>hosted demo</b>: your text is sent to a serverless function (Vercel) to be privatized — processed in memory, not stored in any database, but it does leave your device. The <b>desktop app</b> runs the identical editor fully on-device with 0 bytes of egress.'
-            : 'On-device only — the editor runs on this machine over loopback; 0 bytes of egress, raw text stays local.'}</li>
-          <li>The holistic editor is the primary method; the legacy L0–L3 tiered dial lives in the library for reproducibility.</li>
-          <li>Privacy is measured against an authorship attacker; identifier redaction is strong, stylometric anonymity is bounded — stated, not overclaimed.</li>
-        </ul>
-      </div>
-      <div class="note" style="margin-top:18px">AgnoSpeech 0.9 · ${HOSTED ? 'hosted demo' : 'on-device'} · holistic backend</div>`;
+      <button data-release style="margin-top:16px;width:100%;border:none;cursor:pointer;background:var(--accent);color:var(--accent-fg);font:600 14px 'Public Sans',sans-serif;padding:13px;border-radius:10px;">Generate release package</button>`
+      : `
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:11px;"><span style="width:26px;height:26px;border-radius:50%;background:var(--safe);color:#fff;display:flex;align-items:center;justify-content:center;font:700 14px 'Public Sans';">✓</span><span style="font:600 14px 'Public Sans',sans-serif;color:var(--fg);">Package prepared</span></div>
+        <div style="font:600 12px 'IBM Plex Mono',monospace;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:9px 12px;">agnospeech_release_2026-06-18.zip</div>
+        <div style="font:400 12.5px/1.55 'Public Sans',sans-serif;color:var(--muted);margin-top:13px;">Raw corpus never leaves this device.</div>
+      </div>`;
+    const pkgItem = t => `<div style="display:flex;gap:10px;align-items:center;font:500 13px 'Public Sans',sans-serif;color:var(--fg2);"><span style="color:var(--safe);font-weight:700;">✓</span>${t}</div>`;
+    return `
+      <div>
+        <div style="margin-bottom:18px;">
+          <div style="font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.14em;color:var(--accent);margin-bottom:7px;">STEP 04 · RELEASE</div>
+          <div style="font:700 23px/1.1 'Public Sans',sans-serif;color:var(--fg);">Release readiness</div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:14px;background:var(--safe-bg);border:1px solid var(--safe);border-radius:11px;padding:15px 18px;margin-bottom:16px;">
+          <div style="width:34px;height:34px;border-radius:50%;background:var(--safe);color:#fff;display:flex;align-items:center;justify-content:center;font:700 17px 'Public Sans';flex:none;">✓</div>
+          <div style="flex:1;"><div style="font:700 16px 'Public Sans',sans-serif;color:var(--fg);">Defensible for release</div><div style="font:500 12.5px 'IBM Plex Mono',monospace;color:var(--safe);">residual re-identification risk below the 10% threshold</div></div>
+        </div>
+
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;">
+            <span style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);">Residual re-identification risk</span>
+            <span style="display:flex;align-items:baseline;gap:8px;"><span style="font:700 26px 'Public Sans';color:var(--safe);">3.8%</span><span style="font:600 10px 'IBM Plex Mono',monospace;background:var(--safe-bg);color:var(--safe);padding:3px 7px;border-radius:5px;">LOW</span></span>
+          </div>
+          <div style="position:relative;height:14px;border-radius:7px;background:var(--inset);border:1px solid var(--border);">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:19%;background:var(--safe);border-radius:7px;"></div>
+            <div style="position:absolute;left:50%;top:-5px;bottom:-5px;width:2px;background:var(--danger);"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font:500 10px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:7px;"><span>0%</span><span style="color:var(--danger);">threshold 10%</span><span>20%</span></div>
+        </div>
+
+        <div style="background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:18px 20px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="width:24px;height:24px;border-radius:6px;background:var(--accent);color:var(--accent-fg);display:flex;align-items:center;justify-content:center;font:700 13px 'Public Sans';">✓</span><span style="font:600 14px 'Public Sans',sans-serif;color:var(--fg);">Chain of custody</span></div>
+          <div style="display:flex;flex-direction:column;gap:9px;font:500 12.5px/1.5 'IBM Plex Mono',monospace;color:var(--fg2);">
+            <div>· Processing ran entirely on this device — <strong style="color:var(--accent);">no server was contacted</strong>.</div>
+            <div>· Network egress during the run: <strong style="color:var(--accent);">0 bytes</strong>.</div>
+            <div>· The raw corpus was never written outside the local sandbox. Only the privatized corpus and audit artifacts are exportable.</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:16px;align-items:stretch;">
+          <div style="flex:1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;">
+            <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);margin-bottom:13px;">Release package contents</div>
+            <div style="display:flex;flex-direction:column;gap:11px;">
+              ${pkgItem('Privatized corpus — 20 messages (L1·L2·L3)')}
+              ${pkgItem('Trade-off scorecard — risk 3.8%, utility 94%')}
+              ${pkgItem('Authorship-attack audit log')}
+              ${pkgItem('Harm-check resolutions — 1 reviewed &amp; restored')}
+            </div>
+          </div>
+          <div style="flex:1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;">${right}</div>
+        </div>
+      </div>`;
+  },
+
+  // ===================== LIVE EDITOR (real backend) =====================
+  live() {
+    const o = state.liveOut;
+    const outHtml = state.liveBusy ? '<span class="spin"></span> privatizing…'
+      : (o ? phHi(o.edited) : '<span style="color:var(--faint);">Privatized text appears here.</span>');
+    const markedHtml = o ? markRaw(state.liveText, o.edited) : '';
+    const statsHtml = o
+      ? `<span style="${statChip('danger')}">${countChanged(state.liveText, o.edited)} words changed</span>
+         <span style="${statChip('l1')}">${o.identifiers} identifiers</span>
+         <span style="${statChip('l2')}">${o.chars_in}→${o.chars_out} chars</span>`
+      : '';
+    const pane = 'width:100%;min-height:150px;border:1px solid var(--border);border-radius:9px;background:var(--inset);color:var(--fg);padding:13px 14px;font:400 14.5px/1.6 \'Public Sans\',sans-serif;outline:none;resize:vertical;';
+    const paneOut = 'width:100%;min-height:150px;border:1px solid var(--border);border-radius:9px;background:var(--panel);color:var(--fg);padding:13px 14px;font:400 14.5px/1.6 \'Public Sans\',sans-serif;white-space:pre-wrap;overflow:auto;';
+
+    const sliders = SLIDERS.map(s => `
+      <div>
+        <label style="font:600 12.5px 'Public Sans',sans-serif;color:var(--fg);display:flex;justify-content:space-between;">${s.label}
+          <b id="${s.k}v" style="color:var(--accent);font:600 13px 'IBM Plex Mono',monospace;">${s.fmt(state[s.k])}</b></label>
+        <input id="${s.k}" type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${state[s.k]}" style="margin-top:7px;">
+        <div style="font:400 11.5px/1.45 'Public Sans',sans-serif;color:var(--muted);margin-top:5px;">${s.desc}</div>
+      </div>`).join('');
+
+    return `
+      <div>
+        <div style="margin-bottom:20px;">
+          <div style="font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.14em;color:var(--accent);margin-bottom:7px;">LIVE TOOL · HOLISTIC EDITOR</div>
+          <div style="font:700 23px/1.1 'Public Sans',sans-serif;color:var(--fg);">Privatize your own text</div>
+          <div style="font:400 14px/1.55 'Public Sans',sans-serif;color:var(--muted);margin-top:6px;max-width:720px;">Type or paste text below. The agnospeech holistic editor privatizes it for real — redacting identifiers to typed placeholders and trimming author-identifying style, live as you type. <span style="color:var(--accent);">${PRIV_NOTE}.</span></div>
+        </div>
+
+        <div style="display:flex;gap:18px;align-items:flex-start;">
+          <div style="flex:1;min-width:0;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
+            <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);margin-bottom:10px;">Your text</div>
+            <textarea id="liveIn" placeholder="Paste or type sensitive text…" style="${pane}">${esc(state.liveText)}</textarea>
+            <div style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:.06em;color:var(--faint);margin:13px 0 6px;">WHAT GETS CHANGED <span style="color:var(--danger);background:var(--danger-bg);padding:1px 6px;border-radius:4px;">highlighted</span></div>
+            <div id="liveMarked" style="${paneOut}min-height:54px;">${markedHtml}</div>
+          </div>
+
+          <div style="flex:1;min-width:0;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:16px 18px;">
+            <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);margin-bottom:10px;">Privatized output <span style="font-weight:400;color:var(--faint);">· agnospeech holistic</span></div>
+            <div id="liveOut" style="${paneOut}">${outHtml}</div>
+            <div id="liveStats" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;">${statsHtml}</div>
+          </div>
+        </div>
+
+        <div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-top:16px;">
+          <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);margin-bottom:14px;">Editor settings</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;">${sliders}</div>
+          <div style="font:400 11.5px/1.5 'Public Sans',sans-serif;color:var(--faint);margin-top:14px;">Updates live as you type or move a slider. Powered by the real <span style="font-family:'IBM Plex Mono',monospace;">/api/edit</span> backend — the same holistic editor used across the library.</div>
+        </div>
+      </div>`;
   },
 };
 
-// ---- boot -------------------------------------------------------------------
-function boot() {
-  applyTheme(state.theme);
-  const ring = $('#device-ring');
-  if (ring && HOSTED) ring.textContent = '● hosted demo · processed on the server, not stored';
-  render();
+function planRow(kind, title, desc) {
+  return `
+    <div style="display:flex;gap:11px;">
+      <span style="width:10px;height:10px;border-radius:3px;background:var(--${kind});margin-top:4px;flex:none;"></span>
+      <div><div style="font:600 12.5px 'Public Sans',sans-serif;color:var(--fg);">${title}</div><div style="font:400 12px/1.45 'Public Sans',sans-serif;color:var(--muted);">${desc}</div></div>
+    </div>`;
 }
-boot();
+
+// ---- wiring -----------------------------------------------------------------
+function wire() {
+  $$('[data-go]').forEach(el => el.onclick = () => go(el.dataset.go));
+  const runBtn = $('[data-run]'); if (runBtn) runBtn.onclick = run;
+  const pickBtn = $('[data-pick]'); if (pickBtn) pickBtn.onclick = pickDisabled;
+  $$('[data-tog]').forEach(el => el.onclick = () => set({ [el.dataset.tog]: !state[el.dataset.tog] }));
+  $$('[data-msg]').forEach(el => el.onclick = () => set({ selMsg: +el.dataset.msg }));
+  const restoreBtn = $('[data-restore]'); if (restoreBtn) restoreBtn.onclick = () => set({ harmResolved: true });
+  const releaseBtn = $('[data-release]'); if (releaseBtn) releaseBtn.onclick = () => set({ released: true });
+
+  // live editor
+  const ta = $('#liveIn');
+  if (ta) ta.oninput = () => { state.liveText = ta.value; patchLive(); scheduleLive(); };
+  SLIDERS.forEach(s => {
+    const el = $('#' + s.k);
+    if (!el) return;
+    el.oninput = () => { const lbl = $('#' + s.k + 'v'); if (lbl) lbl.textContent = s.fmt(el.value); };
+    el.onchange = () => { state[s.k] = +el.value; scheduleLive(); };
+  });
+}
+
+// ---- boot -------------------------------------------------------------------
+render();
