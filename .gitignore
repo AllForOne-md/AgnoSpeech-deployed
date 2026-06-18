@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+build/agnospeech-workbench/
+build/_work/
+dist/
+.vercel/
+*.egg-info/
+.venv/
+venv/
+.DS_Store
+.vercel

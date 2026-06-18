@@ -1,0 +1,17 @@
+[project]
+name = "agnospeech-workbench"
+version = "0.9.0"
+description = "AgnoSpeech Local Privatization Workbench — web app over the holistic library."
+requires-python = ">=3.11"
+# Vercel installs these with uv. pandas is intentionally absent (unused by the
+# holistic path) so the function bundle stays under the size limit.
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "scikit-learn>=1.3",
+]
+
+# Single serverless entrypoint: this BaseHTTPRequestHandler already routes the
+# static frontend (web/) and every /api/* endpoint, so one function serves it all.
+[tool.vercel]
+entrypoint = "agnospeech_workbench.server:Handler"
