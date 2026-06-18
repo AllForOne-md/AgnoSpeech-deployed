@@ -9,7 +9,8 @@ const THEMES = {
   paper: {'bg':'#d9d2c6','win':'#fbf9f5','panel':'#fbf9f5','panel2':'#f3efe7','inset':'#ece7dc','fg':'#211c14','fg2':'#3d362b','muted':'#6f6557','faint':'#a59a89','border':'#e7e0d3','border-strong':'#d6cdbc','accent':'#0f7a6e','accent-fg':'#ffffff','accent-soft':'#e0efea','titlebar':'#f1ece2','sidebar':'#f3efe7','sidebar-active':'#e0efea','l1':'#8a5a12','l1-bg':'#f4e7cf','l2':'#0f7a6e','l2-bg':'#ddeee9','l3':'#6a4aa8','l3-bg':'#e9e2f4','safe':'#2c7a4f','safe-bg':'#e1efe6','warn':'#8a5a12','warn-bg':'#f4e7cf','danger':'#a8432c','danger-bg':'#f3e2dc','shadow':'rgba(80,60,30,0.20)'},
 };
 
-const REPO_URL = "https://github.com/AllForOne-md/AgnoSpeech";
+const LIB_URL = "https://github.com/AllForOne-md/AgnoSpeech-lib";
+const APP_URL = "https://github.com/AllForOne-md/AgnoSpeech-deployed";
 
 // Honesty: the on-device / 0-egress claims only hold for the desktop app (loopback).
 // A hosted (Vercel) deployment sends text to a serverless function to privatize it.
@@ -396,12 +397,18 @@ const VIEWS = {
             “Hack the Hate, Renew Democracy” Democracy Hackathon, Strasbourg 2026.</div>
         </div>
         <div class="card">
-          <h3>Repository</h3>
-          <div class="sub">Source, the <span class="mono">agnospeech</span> library, the research spine and this workbench:</div>
-          <div style="margin-top:12px">
-            <a class="btn" href="${REPO_URL}" target="_blank" rel="noopener">Open the GitHub repo ↗</a>
+          <h3>Repositories</h3>
+          <div class="sub">Two repos, split by responsibility:</div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+            <div>
+              <a class="btn" href="${LIB_URL}" target="_blank" rel="noopener">agnospeech library ↗</a>
+              <div class="mono sub" style="margin-top:5px">${LIB_URL.replace('https://','')} — the Python library</div>
+            </div>
+            <div>
+              <a class="btn ghost" href="${APP_URL}" target="_blank" rel="noopener">this app ↗</a>
+              <div class="mono sub" style="margin-top:5px">${APP_URL.replace('https://','')} — the web/desktop workbench</div>
+            </div>
           </div>
-          <div class="mono sub" style="margin-top:10px">${REPO_URL.replace('https://','')}</div>
           <h3 style="margin-top:20px">Creators</h3>
           <ul class="custody" style="gap:7px">
             <li>Maxim Dnestreanschii — backend &amp; deployment</li>
