@@ -11,6 +11,7 @@ const THEMES = {
 
 const LIB_URL = "https://github.com/AllForOne-md/AgnoSpeech-lib";
 const APP_URL = "https://github.com/AllForOne-md/AgnoSpeech-deployed";
+const MAIN_URL = "https://github.com/AllForOne-md/AgnoSpeech";
 
 // Honesty: the on-device / 0-egress claims only hold for the desktop app (loopback).
 // A hosted (Vercel) deployment sends text to a serverless function to privatize it.
@@ -407,6 +408,10 @@ const VIEWS = {
             <div>
               <a class="btn ghost" href="${APP_URL}" target="_blank" rel="noopener">this app ↗</a>
               <div class="mono sub" style="margin-top:5px">${APP_URL.replace('https://','')} — the web/desktop workbench</div>
+            </div>
+            <div>
+              <a class="btn ghost" href="${MAIN_URL}" target="_blank" rel="noopener">AgnoSpeech (main) ↗</a>
+              <div class="mono sub" style="margin-top:5px">${MAIN_URL.replace('https://','')} — the research spine &amp; full project</div>
             </div>
           </div>
           <h3 style="margin-top:20px">Creators</h3>
