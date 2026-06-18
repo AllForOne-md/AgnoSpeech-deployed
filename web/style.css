@@ -208,3 +208,37 @@ h1.step-title { font-size: 27px; font-weight: 650; margin: 7px 0 20px; letter-sp
 .hidden { display: none !important; }
 .spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: sp .7s linear infinite; }
 @keyframes sp { to { transform: rotate(360deg); } }
+
+/* ---- mobile / narrow viewports ---- */
+@media (max-width: 820px) {
+  .win { height: auto; min-height: 100dvh; }
+  .titlebar { height: auto; min-height: 46px; padding: 8px 12px; flex-wrap: wrap; }
+  .title span { display: none; }            /* drop the subtitle, keep "AgnoSpeech" */
+
+  .body { flex-direction: column; }
+  .sidebar {
+    width: 100%; flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border);
+    flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 10px 12px; overflow: visible;
+  }
+  .sidebar > div { width: auto; }
+  .sidebar .kicker { display: none; }
+  .sidebar .steps { flex-direction: row; flex-wrap: wrap; gap: 6px; margin-top: 0; }
+  .sidebar .step { padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; }
+  .sidebar .step .tick { display: none; }
+  .device { display: none; }                /* free up space on phones */
+
+  .main { padding: 18px 14px 32px; }
+  h1.step-title { font-size: 21px; margin-bottom: 14px; }
+
+  /* stack every multi-column layout */
+  .grid.cols-2, .grid.cols-3, .ex-grid, .ex-grid.cols-2 { grid-template-columns: 1fr !important; }
+  .pane { min-height: 120px; }
+}
+
+@media (max-width: 460px) {
+  .main { padding: 14px 11px 28px; }
+  .card { padding: 13px; }
+  h1.step-title { font-size: 19px; }
+  .dots { display: none; }
+}
