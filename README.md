@@ -37,7 +37,7 @@ author-identifying style — one learned pass, deterministic.
 ## Run locally (desktop)
 
 ```bash
-cd workbench
+cd agnospeech-deployed
 pip install -e ../agnospeech-lib      # the library backend
 python run.py                         # native window (pywebview) or browser
 ```
@@ -60,7 +60,7 @@ points Vercel at it and installs deps with **uv**; the library is **vendored** i
 `_lib/` so the deploy is self-contained (no git clone, works with a private repo).
 
 ```bash
-cd workbench
+cd agnospeech-deployed
 vercel --prod --scope <your-team>
 ```
 
@@ -74,7 +74,7 @@ Notes:
 ## Layout
 
 ```
-workbench/
+agnospeech-deployed/
   run.py                       launcher (server + window/browser)
   pyproject.toml               Vercel entrypoint + uv deps
   agnospeech_workbench/
