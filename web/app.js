@@ -108,7 +108,7 @@ const state = {
   harmResolved: false,
   released: false,
   pickNotice: false,
-  fileName: 'helpline_reports_2019-2025.csv',
+  fileName: '',
   sourceFormat: 'csv',
   sourceFileText: null,
   sourceFileSize: 0,
@@ -189,7 +189,7 @@ function go(key) {
 }
 
 function run() {
-  if (state.processing) return;
+  if (state.processing || !state.sourceUploaded) return;
   Object.assign(state, { step:'privatize', processing:true, processDone:false, procStage:0 });
   render();
   timers.forEach(clearTimeout); timers = [];
@@ -211,8 +211,11 @@ async function uploadSourceFile(file) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   const fmt = SOURCE_FORMATS.find(f => f.k === ext) || SOURCE_FORMATS[0];
   const text = await file.text();
+  // Demo: the uploaded file only unlocks the workflow — its contents are not
+  // used. The corpus is always presented + privatized as if it were the
+  // canonical helpline_reports_2019-2025.{csv,json,jsonl} dataset.
   set({
-    fileName: file.name,
+    fileName: fmt.file,
     sourceFormat: fmt.k,
     sourceFileText: text,
     sourceFileSize: file.size,
@@ -408,7 +411,7 @@ function statusbar() {
   return `
     <div style="height:28px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:linear-gradient(90deg,var(--titlebar),rgba(233,226,244,.52));border-top:1px solid var(--border);font:500 11px 'JetBrains Mono','IBM Plex Mono',monospace;color:var(--muted);">
       <span style="display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--safe);box-shadow:0 0 0 4px rgba(44,122,79,.12);"></span>Offline · egress 0 B</span>
-      <span>${esc(state.fileName)}</span>
+      <span>${state.fileName ? esc(state.fileName) : 'no corpus loaded'}</span>
       <span style="color:var(--accent);">AgnoSpeech 0.9 · on-device only</span>
     </div>`;
 }
@@ -431,16 +434,29 @@ const VIEWS = {
     const selectedFormat = SOURCE_FORMATS.find(f => f.k === state.sourceFormat) || SOURCE_FORMATS[0];
     const loadedBadge = state.sourceUploaded
       ? `<span style="font:600 9.5px 'IBM Plex Mono',monospace;background:var(--safe-bg);color:var(--safe);padding:2px 7px;border-radius:5px;">LOADED</span>`
-      : `<span style="font:600 9.5px 'IBM Plex Mono',monospace;background:var(--l3-bg);color:var(--l3);padding:2px 7px;border-radius:5px;">${selectedFormat.label} DEFAULT</span>`;
+      : `<span style="font:600 9.5px 'IBM Plex Mono',monospace;background:var(--inset);color:var(--faint);padding:2px 7px;border-radius:5px;">AWAITING FILE</span>`;
     const fileMeta = state.sourceUploaded
       ? `${fmtBytes(state.sourceFileSize)} · loaded from your computer · local only`
-      : `${selectedFormat.meta} · demo preview: 20 messages · choose a local file`;
+      : `${selectedFormat.meta} · choose a local ${selectedFormat.label} file to begin`;
     const planSliders = SLIDERS.map(s => `
       <div>
         <label style="font:600 12px 'Public Sans',sans-serif;color:var(--fg);display:flex;justify-content:space-between;gap:12px;">${s.label}
           <b id="${s.k}v" style="color:var(--accent);font:600 12.5px 'IBM Plex Mono',monospace;">${s.fmt(state[s.k])}</b></label>
         <input id="${s.k}" type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${state[s.k]}" style="margin-top:5px;">
       </div>`).join('');
+    const corpusPanel = state.sourceUploaded ? `
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;">
+              <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);">Raw messages — sample</div>
+              <div style="font:500 11px 'IBM Plex Mono',monospace;color:var(--faint);">3 of 20</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">${preview}</div>
+            <div style="font:400 11.5px/1.4 'Public Sans',sans-serif;color:var(--muted);margin-top:auto;padding-top:10px;">Each record contains direct identifiers, sender handles, and stylometric traces. These are removed before any data leaves this device.</div>`
+      : `
+            <div style="margin:auto;text-align:center;padding:34px 16px;display:flex;flex-direction:column;align-items:center;gap:11px;">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 16V4M12 4l-5 5M12 4l5 5" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"></path></svg>
+              <div style="font:600 14px 'Public Sans',sans-serif;color:var(--fg);">No corpus loaded</div>
+              <div style="font:400 12.5px/1.5 'Public Sans',sans-serif;color:var(--muted);max-width:300px;">Choose a ${selectedFormat.label} file above to load the corpus, then run privatization.</div>
+            </div>`;
     return `
       <div>
         <div style="margin-bottom:12px;">
@@ -461,7 +477,7 @@ const VIEWS = {
             <div style="flex:1;min-width:0;">
               <div style="display:flex;align-items:center;gap:8px;">
                 <span style="width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font:700 11px 'Public Sans';flex:none;">1</span>
-                <span style="font:600 15px 'Public Sans',sans-serif;color:var(--fg);">${esc(state.fileName)}</span>
+                <span style="font:600 15px 'Public Sans',sans-serif;color:${state.sourceUploaded ? 'var(--fg)' : 'var(--faint)'};">${state.sourceUploaded ? esc(state.fileName) : 'No file chosen'}</span>
                 ${loadedBadge}
               </div>
               <div style="font:500 11.5px 'IBM Plex Mono',monospace;color:var(--muted);margin-top:4px;">${fileMeta}</div>
@@ -482,14 +498,7 @@ const VIEWS = {
         </div>
 
         <div style="display:grid;grid-template-columns:minmax(0,1.45fr) minmax(360px,1fr);gap:16px;align-items:stretch;">
-          <div class="soft-glass" style="height:100%;background:rgba(251,249,245,.76);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0;display:flex;flex-direction:column;">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px;">
-              <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);">Raw messages — sample</div>
-              <div style="font:500 11px 'IBM Plex Mono',monospace;color:var(--faint);">3 of 20</div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:8px;">${preview}</div>
-            <div style="font:400 11.5px/1.4 'Public Sans',sans-serif;color:var(--muted);margin-top:auto;padding-top:10px;">Each record contains direct identifiers, sender handles, and stylometric traces. These are removed before any data leaves this device.</div>
-          </div>
+          <div class="soft-glass" style="height:100%;background:rgba(251,249,245,.76);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0;display:flex;flex-direction:column;">${corpusPanel}</div>
 
           <div class="soft-glass" style="height:100%;background:rgba(251,249,245,.76);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;min-width:0;">
             <div style="font:600 13px 'Public Sans',sans-serif;color:var(--fg);margin-bottom:10px;">Privatization plan</div>
@@ -505,8 +514,8 @@ const VIEWS = {
               </div>
               <div style="display:flex;flex-direction:column;gap:10px;">${planSliders}</div>
             </div>
-            <button data-run style="margin-top:12px;width:100%;border:none;cursor:pointer;background:var(--accent);color:var(--accent-fg);font:600 14px 'Public Sans',sans-serif;padding:11px;border-radius:10px;">Run privatization &nbsp;→</button>
-            <div style="text-align:center;font:500 10.5px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:7px;">Runs entirely on this device · no network</div>
+            <button data-run ${state.sourceUploaded ? '' : 'disabled'} style="margin-top:12px;width:100%;border:none;cursor:${state.sourceUploaded ? 'pointer' : 'not-allowed'};background:${state.sourceUploaded ? 'var(--accent)' : 'var(--inset)'};color:${state.sourceUploaded ? 'var(--accent-fg)' : 'var(--faint)'};font:600 14px 'Public Sans',sans-serif;padding:11px;border-radius:10px;">${state.sourceUploaded ? 'Run privatization &nbsp;→' : 'Upload a corpus to run'}</button>
+            <div style="text-align:center;font:500 10.5px 'IBM Plex Mono',monospace;color:var(--faint);margin-top:7px;">${state.sourceUploaded ? 'Runs entirely on this device · no network' : 'Choose a file above to unlock privatization'}</div>
           </div>
         </div>
       </div>`;
